@@ -21,6 +21,7 @@ from megatron.arguments import core_transformer_config_from_args
 def model_provider(pre_process=True, post_process=True):
     """Build the model."""
     args = get_args()
+    # args.gradient_accumulation_fusion = False
 
     print_rank_0('building GPT model ...')
     config = core_transformer_config_from_args(get_args())
@@ -126,6 +127,7 @@ def train_valid_test_datasets_provider(train_val_test_num_samples):
 
 
 if __name__ == "__main__":
+    torch.multiprocessing.set_start_method('spawn')
 
     pretrain(train_valid_test_datasets_provider,
              model_provider,

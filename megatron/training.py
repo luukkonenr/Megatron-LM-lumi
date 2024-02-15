@@ -151,11 +151,32 @@ def pretrain(train_valid_test_dataset_provider,
 
         iteration = 0
         if args.do_train and args.train_iters > 0:
-            iteration = train(forward_step_func,
-                              model, optimizer, opt_param_scheduler,
-                              train_data_iterator, valid_data_iterator,
-                              process_non_loss_data_func, config)
+            if iteration <= args.profile_step_end and torch.distributed.get_rank() == 1 and args.profile:
+                from torch.profiler import profile, record_function, ProfilerActivity
+                import os
+                def trace_handler(p):
+                    output = p.key_averages().table(sort_by="self_cuda_time_total", row_limit=10)
+                    print(output)
+                    p.export_chrome_trace("tracing/"+ os.environ['SLURM_JOBID'] + "_step" + str(p.step_num) + ".json")
 
+                with profile(
+                    activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
+                    schedule=torch.profiler.schedule(
+                        wait=2,
+                        warmup=3,
+                        active=1),
+                    on_trace_ready=trace_handler
+                ) as p:
+                    iteration = train(forward_step_func,
+                                    model, optimizer, opt_param_scheduler,
+                                    train_data_iterator, valid_data_iterator,
+                                    process_non_loss_data_func, config, p)
+
+            else:
+                iteration = train(forward_step_func,
+                                model, optimizer, opt_param_scheduler,
+                                train_data_iterator, valid_data_iterator,
+                                process_non_loss_data_func, config)
         print_datetime('after training is done')
 
         if args.save and iteration != 0:
@@ -670,7 +691,7 @@ def save_checkpoint_and_time(iteration, model, optimizer, opt_param_scheduler):
 
 def train(forward_step_func, model, optimizer, opt_param_scheduler,
           train_data_iterator, valid_data_iterator,
-          process_non_loss_data_func, config):
+          process_non_loss_data_func, config, p=None):
     """Train the model function."""
     args = get_args()
     timers = get_timers()
@@ -705,12 +726,7 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
     print_datetime('before the start of training step')
     report_memory_flag = True
     while iteration < args.train_iters:
-        if args.profile and \
-           iteration == args.profile_step_start and \
-           torch.distributed.get_rank() in args.profile_ranks:
-            torch.cuda.cudart().cudaProfilerStart()
-            torch.autograd.profiler.emit_nvtx(record_shapes=True).__enter__()
-
+        
         update_num_microbatches(args.consumed_train_samples)
         args.curr_iteration = iteration
         loss_dict, skipped_iter, grad_norm, num_zeros_in_grad = \
@@ -720,6 +736,9 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                        optimizer,
                        opt_param_scheduler,
                        config)
+        if torch.distributed.get_rank() == 1 and args.profile:
+            print("Incrementin profiler step")
+            p.step()
         iteration += 1
         args.consumed_train_samples += mpu.get_data_parallel_world_size() * \
                                        args.micro_batch_size * \
@@ -791,10 +810,6 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
             print_datetime('exiting program at iteration {}'.format(iteration))
             sys.exit()
 
-        if args.profile and \
-           iteration == args.profile_step_end and \
-           torch.distributed.get_rank() in args.profile_ranks:
-            torch.cuda.cudart().cudaProfilerStop()
 
     return iteration
 

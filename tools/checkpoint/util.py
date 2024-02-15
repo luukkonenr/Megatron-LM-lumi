@@ -90,6 +90,11 @@ import sys
 
 def load_plugin(plugin_type, name):
     module_name = f"{plugin_type}_{name}"
+    print(module_name)
+    try:
+        import loader_llama2_hf
+    except ImportError as e:
+        print("Error in loading", e)
     try:
         plugin = importlib.import_module(module_name)
     except ModuleNotFoundError:

@@ -131,7 +131,7 @@ def load_checkpoint_to_model(args):
     from transformers import LlamaForCausalLM
 
     # Load Huggingface model.
-    hf_model = LlamaForCausalLM.from_pretrained(args.load, device_map="cpu")
+    hf_model = LlamaForCausalLM.from_pretrained(args.load)#, device_map="cpu")
 
     # Init Megatron model.
     model = model_provider(True, True).to(args.params_dtype)
