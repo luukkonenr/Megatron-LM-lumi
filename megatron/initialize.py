@@ -17,9 +17,10 @@ from megatron import get_tensorboard_writer
 from megatron.core import mpu, tensor_parallel
 from megatron.arguments import parse_args, validate_args
 from megatron.checkpointing import load_args_from_checkpoint
-from megatron.global_vars import set_global_variables
+from megatron.global_vars import set_global_variables, set_tensorboard_writer
 from megatron.model.transformer import bias_dropout_add_fused_train
 from megatron.model.fused_bias_gelu import bias_gelu
+from megatron.utils import is_last_rank
 
 
 def initialize_megatron(
@@ -63,7 +64,16 @@ def initialize_megatron(
         if args.rank == 0:
             print("> setting random seeds to {} ...".format(args.seed))
         _set_random_seed(args.seed, args.data_parallel_random_init)
+        if is_last_rank() and args.wandb_name:    
+            import wandb
 
+            wandb.init(
+                name=args.wandb_name,
+                project="multiling-llm"
+            )
+            wandb.tensorboard.patch(root_logdir=args.tensorboard_dir)
+                # sync_tensorboard=True
+        set_tensorboard_writer(args)
     args = get_args()
     if args.lazy_mpu_init:
         # TODO is this still a necessary option?

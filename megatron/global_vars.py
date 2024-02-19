@@ -91,7 +91,9 @@ def set_global_variables(args, build_tokenizer=True):
     _build_num_microbatches_calculator(args)
     if build_tokenizer:
         _ = _build_tokenizer(args)
-    _set_tensorboard_writer(args)
+
+    # Move this to enable wandb-integration
+    # _set_tensorboard_writer(args)
     _set_adlr_autoresume(args)
     _set_timers(args)
 
@@ -133,7 +135,7 @@ def rebuild_tokenizer(args):
     return _build_tokenizer(args)
 
 
-def _set_tensorboard_writer(args):
+def set_tensorboard_writer(args):
     """Set tensorboard writer."""
     global _GLOBAL_TENSORBOARD_WRITER
     _ensure_var_is_not_initialized(_GLOBAL_TENSORBOARD_WRITER,

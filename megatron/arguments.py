@@ -649,6 +649,10 @@ def _add_logging_args(parser):
                        '  max: report the max timing across all ranks'
                        '  minmax: report min and max timings across all ranks'
                        '  all: report timings of all ranks.')
+
+    group.add_argument('--wandb-name', type=str, default=None, 
+                       help='Log and commit to wandb by giving a wandb_name')
+    group.add_argument('--wandb-step-offset', type=int, default=0)
     group.add_argument('--tensorboard-log-interval', type=int, default=1,
                        help='Report to tensorboard interval.')
     group.add_argument('--tensorboard-queue-size', type=int, default=1000,
