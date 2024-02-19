@@ -38,7 +38,7 @@ from megatron.utils import unwrap_model
 from megatron.data.data_samplers import build_pretraining_data_loader
 from megatron.utils import calc_params_l2_norm
 from megatron.core.pipeline_parallel import get_forward_backward_func
-from megatron.utils import report_memory
+from megatron.utils import report_memory, throughput_calculator
 from megatron.model.vision.knn_monitor import compute_feature_bank
 
 
@@ -505,7 +505,7 @@ def train_step(forward_step_func, data_iterator,
 
 def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
                  loss_scale, report_memory_flag, skipped_iter,
-                 grad_norm, params_norm, num_zeros_in_grad):
+                 grad_norm, params_norm, num_zeros_in_grad, model=None):
     """Log training information such as losses, timing, ...."""
     args = get_args()
     timers = get_timers()
@@ -635,6 +635,34 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
     if iteration % args.log_interval == 0:
         elapsed_time = timers('interval-time').elapsed(barrier=True)
         elapsed_time_per_iteration = elapsed_time / total_iterations
+        seq_len = args.seq_length
+        if hasattr(args, 'actual_seq_length'):
+            seq_len = args.actual_seq_length
+        samples_per_sec, tflops, approx_parameters_in_billions = throughput_calculator(
+            model,
+            args,
+            elapsed_time,
+            total_iterations
+        )
+        samples_per_sec_per_replica = samples_per_sec / args.data_parallel_size
+        tokens_per_sec = samples_per_sec * seq_len
+        tokens_per_sec_per_replica = tokens_per_sec / args.data_parallel_size
+        tokens_per_gpu_per_second = tokens_per_sec / args.world_size
+        tokens_per_gpu_per_second_per_replica = tokens_per_gpu_per_second / args.data_parallel_size
+        # if wandb is not None and getattr(wandb, 'run', None) is not None:
+        #     tput = {
+        #         'throughput/iteration-time': elapsed_time_per_iteration,  # 1000 ms / s
+        #         'throughput/samples_per_sec': samples_per_sec,
+        #         'throughput/samples_per_sec_per_replica': samples_per_sec_per_replica,
+        #         'throughput/tokens_per_sec': tokens_per_sec,
+        #         'throughput/tokens_per_sec_per_replica': tokens_per_sec_per_replica,
+        #         'throughput/tokens_per_gpu_per_sec': tokens_per_gpu_per_second,
+        #         'throughput/tokens_per_gpu_per_sec_per_replica': tokens_per_gpu_per_second_per_replica,
+        #         'throughput/tflops': tflops,
+        #         'throughput/approx_params_in_billions': approx_parameters_in_billions,
+        #         'throughput/elapsed_ms_per_iteration': elapsed_time_per_iteration,
+        #     }
+        #     wandb.run.log(tput)
         if writer:
             if args.log_timers_to_tensorboard:
                 writer.add_scalar('iteration-time',
@@ -666,6 +694,9 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
             total_loss_dict[skipped_iters_key])
         log_string += ' number of nan iterations: {:3d} |'.format(
             total_loss_dict[nan_iters_key])
+        log_string += ' samples per second: {:.3f} |'.format(samples_per_sec)
+        log_string += ' tokens per gpu per second (tgs): {:.3f} |'.format(tokens_per_gpu_per_second)
+        log_string += ' TFLOPs: {:.2f} |'.format(tflops)
         total_loss_dict[advanced_iters_key] = 0
         total_loss_dict[skipped_iters_key] = 0
         total_loss_dict[nan_iters_key] = 0
@@ -753,7 +784,7 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                                           optimizer.param_groups[0]['lr'],
                                           iteration, loss_scale,
                                           report_memory_flag, skipped_iter,
-                                          grad_norm, params_norm, num_zeros_in_grad)
+                                          grad_norm, params_norm, num_zeros_in_grad, model)
 
         # Autoresume
         if args.adlr_autoresume and \
