@@ -127,7 +127,7 @@ GPT_ARGS=" \
     --bf16 \
     --disable-bias-linear \
     --init-method-std 0.0048 \
-    --make-vocab-size-divisible-by 128 \
+    --make-vocab-size-divisible-by 256000 \
     --no-gradient-accumulation-fusion \
     --normalization RMSNorm \
     --seed 42 \
