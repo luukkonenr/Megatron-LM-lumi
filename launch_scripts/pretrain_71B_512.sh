@@ -1,16 +1,16 @@
 #!/bin/bash
 
-#SBATCH --job-name=worker0
+#SBATCH --job-name=worker2
 #SBATCH --nodes=16
 #SBATCH --cpus-per-task=7
 #SBATCH --ntasks-per-node=8
 #SBATCH --mem=0
-#SBATCH --partition=dev-g
+#SBATCH --partition=standard-g
 #SBATCH --time=00-00:35:00
 #SBATCH --gpus-per-node=mi250:8
 #SBATCH --exclusive=user
 #SBATCH --hint=nomultithread
-#SBATCH --account=project_462000353
+#SBATCH --account=project_462000319
 #SBATCH --output=logs/%j.out
 #SBATCH --error=logs/%j.err
 #SBATCH --exclude=nid005003,nid007971,nid007972
@@ -37,13 +37,14 @@ export CXX=g++-10
 
 # singularity setup
 
-#CONTAINER="/scratch/project_462000319/containers/vaino_flashattention_v2_new"
-CONTAINER="/flash/project_462000424/singularity/flashattention_new"
-# CONTAINER="/flash/project_462000424/singularity/container_out3.sif"
+# CONTAINER="/scratch/project_462000319/containers/vaino_flashattention_v2_new"
+# CONTAINER="/flash/project_462000424/singularity/flashattention_new"
+# CONTAINER=/appl/local/containers/sif-images/lumi-pytorch-rocm-5.6.1-python-3.10-pytorch-v2.2.0.sif
+CONTAINER="/flash/project_462000424/singularity/container_out3.sif"
 # CONTAINER="/scratch/project_462000319/rluukkon/singularity/flash-attn-test-2_pems_v2.sif"
 SING_BIND="/scratch/project_462000319,/flash/project_462000319,/scratch/project_462000086"
 
-LEARNING_RATE=3e-4
+LEARNING_RATE=3.2e-4
 
 set -euo pipefail
 
@@ -59,7 +60,6 @@ export CUDA_DEVICE_MAX_CONNECTIONS=1
 
 # TRAIN_DATA="1.0 /scratch/project_462000319/rluukkon/Megatron-DeepSpeed-dev/dataset/parsebank-combined.dedup.filtered.jsonl-with-reg-scores-MT-filtered_text_document"
 TRAIN_DATA="0.5415810341 /flash/project_462000319/megatron-preprocessed-data/train/merged_slimpajama 0.1304808053 /flash/project_462000319/megatron-preprocessed-data/train/merged_finnish 0.004023063515 /flash/project_462000319/megatron-preprocessed-data/train/tatoeba-train.en-fi.jsonl_text_document 0.004016818638 /flash/project_462000319/megatron-preprocessed-data/train/tatoeba-train.fi-en.jsonl_text_document 0.3153543717 /flash/project_462000319/megatron-preprocessed-data/train/starcoder-merged 0.004543906834 /flash/project_462000319/megatron-preprocessed-data/train/train-books_text_document"
-VALIDATION_DATA="0.5415810341 /flash/project_462000319/megatron-preprocessed-data/eval/slim-pajama-validation_text_document 0.1304808053 /flash/project_462000319/megatron-preprocessed-data/eval/finnish_eval_text_document 0.004023063515 /flash/project_462000319/megatron-preprocessed-data/eval/tatoeba-eval.en-fi_text_document 0.004016818638 /flash/project_462000319/megatron-preprocessed-data/eval/tatoeba-eval.fi-en_text_document 0.3153543717 /flash/project_462000319/megatron-preprocessed-data/eval/starcoder-eval_content_document 0.004543906834 /flash/project_462000319/megatron-preprocessed-data/eval/eval-books.json_text_document"
 MERGES=/scratch/project_462000319/tokenizers/nordic_tokenizer_131072/merges.txt
 VOCAB=/scratch/project_462000319/tokenizers/nordic_tokenizer_131072/vocab.json
 
@@ -70,8 +70,7 @@ FFN_HIDDEN_SIZE=28672
 SEQ_LEN=5120
 
 MICRO_BATCH_SIZE=1
-SEQ_LEN=4096
-GLOBAL_BATCH_SIZE=$((SLURM_JOB_NUM_NODES * 4))
+GLOBAL_BATCH_SIZE=$((SLURM_JOB_NUM_NODES * 2))
 
 PP_SIZE=8
 TP_SIZE=8
@@ -80,13 +79,14 @@ VPP_SIZE=2
 # export MEMORY_OPT_ALLREDUCE_SIZE=150000000
 # echo "MEMORY_OPT_ALLREDUCE_SIZE $MEMORY_OPT_ALLREDUCE_SIZE"
 
-TOTAL_TOKENS=3_000_000_000_000
+TOTAL_TOKENS=3_000_000_000
 TOTAL_TOKENS=${TOTAL_TOKENS//_}    # drop "_" for bash math
 TRAIN_SAMPLES=$((TOTAL_TOKENS/SEQ_LEN))
 LR_DECAY_SAMPLES=$TRAIN_SAMPLES
 LR_WARMUP_SAMPLES=$((TRAIN_SAMPLES/100))
 
 NUM_QUERY_GROUPS=8
+
 LOG_INTERVAL=1
 SAVE_INTERVAL=1000
 EVAL_INTERVAL=4000
@@ -111,6 +111,7 @@ if [ $DEEPSPEED != true ];then
    --use-distributed-optimizer"
 fi
 
+    # --make-vocab-size-divisible-by 128 \
 GPT_ARGS=" \
     --num-layers $NLAYERS \
     --hidden-size $NHIDDEN \
@@ -217,15 +218,14 @@ CMD=" \
     $GPT_ARGS \
     $PARALLEL_ARGS \
     $OUTPUT_ARGS \
-    --train-data-path $TRAIN_DATA \
-    --valid-data-path $VALIDATION_DATA \
+    --data-path $TRAIN_DATA \
     --dataloader-type single \
-    --num-workers 0 \
+    --num-workers 2 \
     --recompute-activations \
     "
-    
     # --profile \
     # --profile-step-end 20 \
+    
 if [ $DEEPSPEED = true ]; then
     CMD="$CMD \
     $DEEPSPEED_ARGS"
