@@ -21,11 +21,13 @@ def add_arguments(parser):
                        help='Sentencepiece tokenizer model.')
     group.add_argument('--megatron-path', type=str, default=None,
                        help='Base directory of deepspeed repository')
+    group.add_argument('--iteration', type=int, default=1)
 
 
 def verify_transformers_version():
-    major, minor, patch = map(int, transformers.__version__.split('.'))
-    assert major >= 4 and minor >= 31
+    print(transformers.__version__)
+    major, minor  = transformers.__version__.split('.')[:2]
+    assert int(major) >= 4 and int(minor) >= 31
 
 
 def load_args_from_checkpoint(args):
@@ -43,12 +45,14 @@ def load_args_from_checkpoint(args):
     args.num_layers = llama_args["num_hidden_layers"]
     args.global_batch_size = 1024
     args.norm_epsilon = llama_args["rms_norm_eps"]
-    args.iteration = 1 # '0', 'release' don't work
+
+    # args.iteration = 1 # '0', 'release' don't work
     args.add_position_embedding = False
     args.use_rotary_position_embeddings = True
     args.swiglu = True
-    args.tokenizer_type = "Llama2Tokenizer"
-    args.fp16 = True
+    args.tokenizer_type = "GPT2BPETokenizer"
+    # args.tokenizer_type = "Llama2Tokenizer"
+    args.bf16 = True
     args.normalization = "RMSNorm"
     args.add_bias_linear = False
     args.apply_query_key_layer_scaling = False
@@ -183,11 +187,13 @@ def _load_checkpoint(queue, args):
                 '--no-save-optim',
                 '--no-save-rng',
                 '--no-initialization',
+                '--no-gradient-accumulation-fusion',
                 '--load', args.load_dir
                 ]
 
     margs = parse_args()
     margs.tokenizer_model = args.tokenizer_model
+    margs.iteration = args.iteration
     load_args_from_checkpoint(margs)
 
     # Arguments do sanity checks on the world size, but we don't care,
