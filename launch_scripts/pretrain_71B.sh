@@ -1,16 +1,16 @@
 #!/bin/bash
 
-#SBATCH --job-name=worker0
+#SBATCH --job-name=v3-train
 #SBATCH --nodes=16
 #SBATCH --cpus-per-task=7
 #SBATCH --ntasks-per-node=8
 #SBATCH --mem=0
 #SBATCH --partition=dev-g
-#SBATCH --time=00-00:35:00
+#SBATCH --time=02-00:00:00
 #SBATCH --gpus-per-node=mi250:8
 #SBATCH --exclusive=user
 #SBATCH --hint=nomultithread
-#SBATCH --account=project_462000353
+#SBATCH --account=project_462000319
 #SBATCH --output=logs/%j.out
 #SBATCH --error=logs/%j.err
 #SBATCH --exclude=nid005003,nid007971,nid007972
@@ -37,13 +37,12 @@ export CXX=g++-10
 
 # singularity setup
 
-#CONTAINER="/scratch/project_462000319/containers/vaino_flashattention_v2_new"
-CONTAINER="/flash/project_462000424/singularity/flashattention_new"
-# CONTAINER="/flash/project_462000424/singularity/container_out3.sif"
-# CONTAINER="/scratch/project_462000319/rluukkon/singularity/flash-attn-test-2_pems_v2.sif"
-SING_BIND="/scratch/project_462000319,/flash/project_462000319,/scratch/project_462000086"
+# CONTAINER="/scratch/project_462000319/containers/flashattention_v2_new"
+#CONTAINER=/appl/local/containers/sif-images/lumi-pytorch-rocm-5.6.1-python-3.10-pytorch-v2.2.0.sif
+CONTAINER="/flash/project_462000424/singularity/container_out3.sif"
+SING_BIND="/scratch/project_462000319,/flash/project_462000319,/scratch/project_462000086,/scratch/project_462000444"
 
-LEARNING_RATE=3e-4
+LEARNING_RATE=3.2e-4
 
 set -euo pipefail
 
@@ -52,16 +51,15 @@ ln -f -s "${SLURM_JOB_ID}.out" logs/latest.out
 ln -f -s "${SLURM_JOB_ID}.err" logs/latest.err
 
 CHECKPOINT_PATH=checkpoints
-TENSORBOARD_PATH="tensorboard/70B_test.$SLURM_JOB_ID"
-#rm -rf "$CHECKPOINT_PATH" "$TENSORBOARD_PATH" # Start from scratch
+TENSORBOARD_PATH="tensorboard/v3-train.$SLURM_JOB_ID"
 
 export CUDA_DEVICE_MAX_CONNECTIONS=1
 
-# TRAIN_DATA="1.0 /scratch/project_462000319/rluukkon/Megatron-DeepSpeed-dev/dataset/parsebank-combined.dedup.filtered.jsonl-with-reg-scores-MT-filtered_text_document"
-TRAIN_DATA="0.5415810341 /flash/project_462000319/megatron-preprocessed-data/train/merged_slimpajama 0.1304808053 /flash/project_462000319/megatron-preprocessed-data/train/merged_finnish 0.004023063515 /flash/project_462000319/megatron-preprocessed-data/train/tatoeba-train.en-fi.jsonl_text_document 0.004016818638 /flash/project_462000319/megatron-preprocessed-data/train/tatoeba-train.fi-en.jsonl_text_document 0.3153543717 /flash/project_462000319/megatron-preprocessed-data/train/starcoder-merged 0.004543906834 /flash/project_462000319/megatron-preprocessed-data/train/train-books_text_document"
-VALIDATION_DATA="0.5415810341 /flash/project_462000319/megatron-preprocessed-data/eval/slim-pajama-validation_text_document 0.1304808053 /flash/project_462000319/megatron-preprocessed-data/eval/finnish_eval_text_document 0.004023063515 /flash/project_462000319/megatron-preprocessed-data/eval/tatoeba-eval.en-fi_text_document 0.004016818638 /flash/project_462000319/megatron-preprocessed-data/eval/tatoeba-eval.fi-en_text_document 0.3153543717 /flash/project_462000319/megatron-preprocessed-data/eval/starcoder-eval_content_document 0.004543906834 /flash/project_462000319/megatron-preprocessed-data/eval/eval-books.json_text_document"
-MERGES=/scratch/project_462000319/tokenizers/nordic_tokenizer_131072/merges.txt
-VOCAB=/scratch/project_462000319/tokenizers/nordic_tokenizer_131072/vocab.json
+# sets TRAIN_DATA and VALIDATION_DATA
+source source_europa_datasets.sh
+
+MERGES=/scratch/project_462000444/europa/tokenizers/europa_tokenizer_262144_rc3-sampled-50B-shuf.jsonl/merges.txt
+VOCAB=/scratch/project_462000444/europa/tokenizers/europa_tokenizer_262144_rc3-sampled-50B-shuf.jsonl/vocab.json
 
 NLAYERS=80
 NHIDDEN=8192
@@ -70,8 +68,8 @@ FFN_HIDDEN_SIZE=28672
 SEQ_LEN=5120
 
 MICRO_BATCH_SIZE=1
-SEQ_LEN=4096
-GLOBAL_BATCH_SIZE=$((SLURM_JOB_NUM_NODES * 4))
+# Global batch size in tokens ~5.25M
+GLOBAL_BATCH_SIZE=$((SLURM_JOB_NUM_NODES * 2))
 
 PP_SIZE=8
 TP_SIZE=8
@@ -87,10 +85,12 @@ LR_DECAY_SAMPLES=$TRAIN_SAMPLES
 LR_WARMUP_SAMPLES=$((TRAIN_SAMPLES/100))
 
 NUM_QUERY_GROUPS=8
+
 LOG_INTERVAL=1
 SAVE_INTERVAL=1000
 EVAL_INTERVAL=4000
 EVAL_STEPS=100
+
 OPTIMIZER_ARGS=" \
     --optimizer adam \
     --adam-beta1 0.9 \
@@ -103,13 +103,8 @@ OPTIMIZER_ARGS=" \
     --lr-warmup-samples $LR_WARMUP_SAMPLES \
     --clip-grad 1.0 \
     --weight-decay 1e-1 \
-    "
+    --use-distributed-optimizer"
 
-DEEPSPEED=false
-if [ $DEEPSPEED != true ];then
-   OPTIMIZER_ARGS="$OPTIMIZER_ARGS \
-   --use-distributed-optimizer"
-fi
 
 GPT_ARGS=" \
     --num-layers $NLAYERS \
@@ -147,20 +142,19 @@ GPT_ARGS=" \
 
 
 
-    # --save $CHECKPOINT_PATH \
-    # --load $CHECKPOINT_PATH \
 OUTPUT_ARGS=" \
+    --save $CHECKPOINT_PATH \
+    --load $CHECKPOINT_PATH \
     --log-interval $LOG_INTERVAL \
     --save-interval $SAVE_INTERVAL \
     --eval-interval $EVAL_INTERVAL \
     --eval-iters $EVAL_STEPS \
+    --tensorboard-dir $TENSORBOARD_PATH \
+    --tensorboard-queue-size 5 \
+    --log-timers-to-tensorboard \
+    --log-batch-size-to-tensorboard \
+    --log-validation-ppl-to-tensorboard \
     "
-    # --tensorboard-dir $TENSORBOARD_PATH \
-    # --tensorboard-queue-size 5 \
-    # --log-timers-to-tensorboard \
-    # --log-batch-size-to-tensorboard \
-    # --log-validation-ppl-to-tensorboard \
-    # "
 PARALLEL_ARGS="\
     --tensor-model-parallel-size $TP_SIZE \
     --pipeline-model-parallel-size $PP_SIZE \
@@ -172,45 +166,6 @@ if (( VPP_SIZE > 1)); then
     --num-layers-per-virtual-pipeline-stage $VPP_SIZE"
 fi
 
-ZERO_STAGE=1
-
-mkdir -p ds_configs
-DS_CONFIG_PATH="ds_configs/$SLURM_JOB_ID.json"
-
-cat <<EOF > $DS_CONFIG_PATH
-{
-    "train_micro_batch_size_per_gpu": $MICRO_BATCH_SIZE,
-    "train_batch_size": $GLOBAL_BATCH_SIZE,
-    "gradient_clipping": 1.0,
-    "bf16": {
-        "enabled": true
-    },
-    "data_types": {
-        "grad_accum_dtype": "float32"
-    },
-    "zero_optimization": {
-        "stage": $ZERO_STAGE,
-        "allgather_partitions": true,
-        "allgather_bucket_size": 5e8,
-        "overlap_comm": true,
-        "reduce_scatter": true,
-        "reduce_bucket_size": "auto",
-        "contiguous_gradients": true
-    },
-    "steps_per_print": 2000,
-    "wall_clock_breakdown": false
-}
-EOF
-
-DEEPSPEED_ARGS=" \
-    --deepspeed \
-    --deepspeed_config $DS_CONFIG_PATH \
-    --zero-stage $ZERO_STAGE \
-    "
-
-DEEPSPEED_ARGS="--deepspeed-activation-checkpointing ${DEEPSPEED_ARGS}"
-DEEPSPEED_ARGS="--recompute-granularity selective  ${DEEPSPEED_ARGS}"
-
 
 CMD=" \
     pretrain_gpt.py \
@@ -220,17 +175,9 @@ CMD=" \
     --train-data-path $TRAIN_DATA \
     --valid-data-path $VALIDATION_DATA \
     --dataloader-type single \
-    --num-workers 0 \
+    --num-workers 1 \
     --recompute-activations \
     "
-    
-    # --profile \
-    # --profile-step-end 20 \
-if [ $DEEPSPEED = true ]; then
-    CMD="$CMD \
-    $DEEPSPEED_ARGS"
-fi
-    # --valid-data-path $VALIDATION_DATA \
 
 echo $CMD
 
@@ -261,16 +208,6 @@ if [ ! -d "$wd"/cray-deps ] ; then
   cp /usr/lib64/libcxi* $wd/cray-deps
 fi
 
-# srun \
-#     --label \
-#     singularity exec \
-#     -B /opt/cray:/opt/cray \
-#     -B "$wd"/cray-deps:/opt/cray-deps \
-#     -B "$wd":/workdir \
-#     -B "$SING_BIND" \
-#     "$CONTAINER" \
-#     bash "cd /scratch/project_462000319/rluukkon/megatron_tests/Megatron-DeepSpeed-jonabur-copy/ &&  launch.sh $CMD"
-#
 srun \
     --label \
     --cpu-bind=mask_cpu:$BIND_MASK \
