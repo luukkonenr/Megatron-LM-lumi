@@ -67,7 +67,6 @@ def fix_query_key_value_ordering(param, checkpoint_version, num_splits, num_head
     # If param is the weight tensor of the self-attention block, the returned tensor
     # will have to be transposed one more time to be read by HuggingFace GPT2.
     input_shape = param.size()
-    print(input_shape, num_splits, num_heads, hidden_size)  
     if checkpoint_version == 1.0:
         # version 1.0 stores [num_heads * hidden_size * num_splits, :]
         saved_shape = (num_heads, hidden_size, num_splits) + input_shape[1:]
@@ -78,8 +77,9 @@ def fix_query_key_value_ordering(param, checkpoint_version, num_splits, num_head
         # other versions store [num_heads * num_splits * hidden_size, :]
         saved_shape = (num_heads, num_splits, hidden_size) + input_shape[1:]
         param = param.view(*saved_shape)
-        # param = param.transpose(0, 1).contiguous()
-        param = param.transpose(1, 0).contiguous()
+        param = param.transpose(0, 1).contiguous()
+        log("TODO: Delete this print unless models are catasthropically bad")
+        # param = param.transpose(1, 0).contiguous()
     param = param.view(*input_shape)
     return param
 
@@ -111,8 +111,9 @@ def convert_megatron_checkpoint(args, input_state_dict, config):
         config.hidden_size = ds_args.hidden_size
         config.num_hidden_layers = ds_args.num_layers
         config.num_attention_heads = ds_args.num_attention_heads
-        config.num_key_value_heads = getattr(ds_args, "num_key_value_heads", ds_args.num_query_groups)
-        # config.num_key_value_heads = ds_args.num_key_value_heads
+        # megatron_vars(ds_args).get("num_query_groups") 
+
+        config.num_key_value_heads = 32 #ds_args.num_key_value_heads
         config.intermediate_size = ds_args.ffn_hidden_size
         config.untie_embeddings_and_output_weights = ds_args.untie_embeddings_and_output_weights
         # pprint(config)
@@ -226,8 +227,8 @@ def convert_megatron_checkpoint(args, input_state_dict, config):
         )   and weight_or_bias == "weight":
             #print(f">> key_value origin size: {val.size()}")
             size_per_weight = val.size(0) // 2
-            # kv_groups = config.num_attention_heads//config.num_key_value_heads
-            out_val = fix_query_key_value_ordering(val, checkpoint_version, 2, config.num_key_value_heads, hidden_size_per_head)
+            kv_groups = config.num_attention_heads//config.num_key_value_heads
+            out_val = fix_query_key_value_ordering(val, checkpoint_version, 2, heads//kv_groups, hidden_size_per_head)
             #print(f">> key_value output size: {out_val.size()}")
             out_val = out_val.contiguous()
             output_state_dict[layer_name + ".self_attn.k_proj.weight"] = out_val[:size_per_weight, :]
@@ -346,7 +347,7 @@ def main():
     validate_args(args)
 
     if args.path_to_unmerged_checkpoint:
-        from merge_partitions import merge_model, save_model, parse_output_path
+        from _merge_partitions import merge_model, save_model, parse_output_path
 
         if args.merged_save_path:
             merged_output_path = parse_output_path(args.path_to_unmerged_checkpoint, args.merged_save_path)

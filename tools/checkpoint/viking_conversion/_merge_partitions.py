@@ -127,6 +127,8 @@ def merge_model(path_to_checkpoint, mode='default'):
             cp_version = shard['checkpoint_version']
             tokens = shard.get('tokens', None)
             group_query_key = 'num_key_value_heads' if vars(cp_args).get('num_key_value_heads') else 'num_query_groups'
+            if group_query_key == "num_query_groups":
+                print("TODO: validate that Megatron-LM and Megatron-DS group-query-attention implementation is identical")
 
             assert int(pp_size)*int(tp_size)==len(chunks), "Number of shard paths and no. shards in arguments differ!"
         
@@ -182,29 +184,13 @@ def merge_model(path_to_checkpoint, mode='default'):
                                 and ('self_attention.query_key_value.weight' in name):
                              
                             # [sq, b, ((nq + 2 * nkv) * hn)] --> [sq, b, nkv, (nq // nkv + 2), hn] 
-#                            shape = (-1,
-#                            # TODO: fix to divide with num_key_value_groups
-#                                cp_args.num_attention_heads // vars(cp_args).get(group_query_key) + 2, 
-#                                cp_args.hidden_size // cp_args.num_attention_heads, 
-#                                cp_args.hidden_size)
-
-                            # [sq, b, hp] --> [sq, b, ng, (np/ng + 2) * hn]
-                                # mixed_x_layer.size()[:-1] + (
-                                #     self.num_query_groups_per_partition,
-                                #     (
-                                #         (self.num_attention_heads_per_partition // self.num_query_groups_per_partition + 2)
-                                #         * self.hidden_size_per_attention_head
-                                #     ),
-                                # )
-                            num_query_groups = vars(cp_args).get(group_query_key)
-                            # num_query_groups_per_partition = num_query_groups // tp_size
                             shape = (-1,
-                                cp_args.num_attention_heads // vars(cp_args).get(group_query_key) + 2, 
+                            # TODO: fix to divide with num_key_value_groups
+                                cp_args.num_attention_heads // max(32 ,vars(cp_args).get(group_query_key)) + 2, 
                                 cp_args.hidden_size // cp_args.num_attention_heads, 
                                 cp_args.hidden_size)
-                                
-                            layer = layer.view(*shape)
 
+                            layer = layer.view(*shape)
                             query_layer = layer[:,:-2].reshape(-1, cp_args.hidden_size)
                             key_value_layer = layer[:,-2:].reshape(-1,cp_args.hidden_size)
                             kv_label = ''.join(layer_name.split('query_'))
