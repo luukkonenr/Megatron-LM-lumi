@@ -89,7 +89,7 @@ def generate_tokens_probs_and_return_on_first_stage(
         model, tokens, lengths,
         return_output_log_probs=False,
         top_k=0, top_p=0.0, top_p_decay=0.0, top_p_bound=0.0,
-        temperature=1.0,
+        temperature=0.1,
         use_eod_token_for_early_termination=True,
         stop_on_double_eol=False,
         stop_on_eol=False,
@@ -185,8 +185,43 @@ def generate_tokens_probs_and_return_on_first_stage(
 
             # logits will be meanigful only in the last pipeline stage.
             logits = forward_step(tokens2use, positions2use, attention_mask2use)
-
+            # try:
+            #     logits = logits[0]
+            # except:
+            #     logits = logits
+                
             if mpu.is_pipeline_last_stage():
+                ### Perplexity test
+                from torch.nn import CrossEntropyLoss
+                loss_fct = CrossEntropyLoss(reduction="mean")
+                shift_logits = logits[:, :-1, :]
+                shift_labels = tokens2use[:, 1:]
+                # print(shift_logits, shift_labels)
+                # print("Shift labels:\n", shift_labels)
+                loss = loss_fct(shift_logits.transpose(1, 2), shift_labels)
+                print("Loss, total:", loss)
+                # print("Last token loss:", (loss_fct(shift_logits.transpose(1, 2), shift_labels)[:,-1].unsqueeze(1)))
+                # print("Last token perplexity:", torch.exp((loss_fct(shift_logits.transpose(1, 2), shift_labels))[:, -1].unsqueeze(1)), flush=True)
+                from math import log, exp
+                from torch.nn.functional import softmax
+                from torch import argmax, argsort
+                # print("Tokens2use:", tokens2use.shape, tokens2use)
+                # print("Positions2use:", positions2use.shape, positions2use)
+                # print(logits.shape)
+                try:
+                    l = logits[0, -2, :]
+                    print("Predicted next token", argmax(l))
+                    print("Predicted next token PPL", exp(-log(float(softmax(l)[argmax(l)]))))
+                    # target_id = 20233 # Adam
+                    # target_id = 58588 # Hudson
+                    # print(f"Predicted '{tokenizer.decode(target_id)}' PPL", exp(-log(float(softmax(l)[target_id]))))
+                    print(f"Predicted for token id'{target_id} ({tokenizer.decode(target_id)})' PPL", exp(-log(float(softmax(l)[target_id]))))
+                    
+                    
+                except:
+                    # print("Couldn't get PPL due to dimension error in quick implementation")
+                    continue
+                ####
                 if prevent_newline_after_colon:
                     logits[tokens2use[:, -1] == tokenizer.tokenize(':')[0], -1, tokenizer.tokenize('\n')[0]] = -1e10 # disable "\n" after ":"
                 # Always the last stage should have an output.
@@ -282,7 +317,7 @@ def generate_tokens_probs_and_return_on_first_stage(
         output_log_probs = broadcast_from_last_to_first_pipeline_stage(
             output_log_probs_size, torch.float32, output_log_probs)
 
-    return tokens, generated_sequence_lengths, output_log_probs, None
+    return tokens, generated_sequence_lengths, output_log_probs, loss
 
 def beam_search_and_return_on_first_stage(model, tokens, lengths, beam_size, stop_token, num_return_gen, length_penalty, prevent_newline_after_colon=True):
     args = get_args()
@@ -406,6 +441,7 @@ def beam_search_and_return_on_first_stage(model, tokens, lengths, beam_size, sto
 
         scores_size_tensor = broadcast_from_last_pipeline_stage(1, torch.int64, scores_size_tensor)
         tokens_size_tensor = broadcast_from_last_pipeline_stage(2, torch.int64, tokens_size_tensor)
+
 
         scores = broadcast_from_last_to_first_pipeline_stage(tuple(scores_size_tensor), torch.float32, scores)
         tokens = broadcast_from_last_to_first_pipeline_stage(tuple(tokens_size_tensor), torch.int64, tokens)

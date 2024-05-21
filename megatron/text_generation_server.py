@@ -67,7 +67,7 @@ class MegatronGenerate(Resource):
         if tokens_to_generate == 0 and not logprobs:
             return "tokens_to_generate=0 implies logprobs should be True"
         
-        temperature = 1.0
+        temperature = 0.01
         if "temperature" in request.get_json():
             temperature = request.get_json()["temperature"]
             if not (type(temperature) == int or type(temperature) == float):
@@ -75,7 +75,7 @@ class MegatronGenerate(Resource):
             if not (0.0 < temperature <= 100.0):
                 return "temperature must be a positive number less than or equal to 100.0"
         
-        top_k = 0.0
+        top_k = 1.0
         if "top_k" in request.get_json():
             top_k = request.get_json()["top_k"]
             if not (type(top_k) == int):
@@ -204,7 +204,7 @@ class MegatronGenerate(Resource):
                         "scores": response_scores})
                 else:
                     MegatronGenerate.send_do_generate()  # Tell other ranks we're doing generate
-                    response, response_seg, response_logprobs, _ = \
+                    response, response_seg, response_logprobs, loss = \
                         generate_and_post_process(
                         self.model,
                         prompts=prompts,
@@ -221,10 +221,12 @@ class MegatronGenerate(Resource):
                         stop_on_eol=stop_on_eol,
                         prevent_newline_after_colon=prevent_newline_after_colon,
                         random_seed=random_seed)
+                    # print("response: ", response, response_seg, response_logprobs, loss)
 
                     return jsonify({"text": response,
                         "segments": response_seg,
-                        "logprobs": response_logprobs})
+                        "logprobs": response_logprobs,
+                        "loss": loss.item() if loss is not None else "N/A"})
 
             except ValueError as ve:
                 return ve.args[0]

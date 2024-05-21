@@ -35,7 +35,7 @@ def generate_and_post_process(model,
     move to cpu and convert to list."""
 
     # Main inference.
-    tokens, lengths, output_log_probs, logits = generate(
+    tokens, lengths, output_log_probs, loss = generate(
         model,
         prompts=prompts,
         tokens_to_generate=tokens_to_generate,
@@ -68,8 +68,10 @@ def generate_and_post_process(model,
             return prompts_plus_generations, prompts_plus_generations_segments, \
             output_log_probs, tokens, logits
         else:
+            # return prompts_plus_generations, prompts_plus_generations_segments, \
+            # output_log_probs, tokens
             return prompts_plus_generations, prompts_plus_generations_segments, \
-            output_log_probs, tokens
+            output_log_probs, loss
 
     return None
 

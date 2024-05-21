@@ -29,9 +29,12 @@ def detokenize_generations(tokens_gpu_tensor,
             tokenizer.detokenize(sequence_tokens))
         if return_segments:
             words = []
+            print(sequence_tokens, flush=True)
             for token in sequence_tokens:
+                print(token)
                 if args.tokenizer_type in ['SentencePieceTokenizer', 
                                            'GPTSentencePieceTokenizer',
+                                           'HFPretrainedTokenizer',
                                            'Llama2Tokenizer']:
                     word = tokenizer.decoder[token]
                 elif args.tokenizer_type == 'NullTokenizer':
@@ -103,6 +106,7 @@ def _tokenize_prompts_and_batch(prompts, tokens_to_generate, add_BOS):
     else:
         prompts_tokens = [tokenizer.tokenize(prompt) for prompt in prompts]
 
+    print("Tokenizer: ", tokenizer, flush=True)
     # Now we have a list of list of tokens which each list has a different
     # size. We want to extend this list to:
     #   - incorporate the tokens that need to be generated
@@ -115,11 +119,15 @@ def _tokenize_prompts_and_batch(prompts, tokens_to_generate, add_BOS):
     samples_length = max_prompt_len + tokens_to_generate
     # Now update the list of list to be of the same size: samples_length.
     for prompt_tokens, prompt_length in zip(prompts_tokens, prompts_length):
+        
         padding_size = samples_length - prompt_length
         prompt_tokens.extend([tokenizer.eod] * padding_size)
+
+    print("PROMPT TOKENS", prompt_tokens, flush=True)
+
 
     # Now we are in a structured format, we can convert to tensors.
     prompts_tokens_tensor = torch.cuda.LongTensor(prompts_tokens)
     prompts_length_tensor = torch.cuda.LongTensor(prompts_length)
-
+    
     return prompts_tokens_tensor, prompts_length_tensor
