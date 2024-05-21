@@ -156,13 +156,22 @@ class Float16Module(MegatronModule):
 
     def __init__(self, module, args):
         super(Float16Module, self).__init__()
+        
+        # retain rope in fp32
+        if args.position_embedding_type == 'rope':
+            import copy
+            rotary_pos_emb = copy.deepcopy(module.language_model.rotary_pos_emb)
 
         if args.fp16:
             self.add_module('module', module.half())
             def float16_convertor(val):
                 return val.half()
         elif args.bf16:
-            self.add_module('module', module.bfloat16())
+            print("Using custom hack to retain rotary pos emb in fp32")
+            converted_module = module.bfloat16()
+            converted_module.language_model.rotary_pos_emb = rotary_pos_emb
+            print("converted_module.language_model.rotary_pos_emb.dtype: ", converted_module.language_model.rotary_pos_emb.inv_freq.dtype)
+            self.add_module('module', converted_module)
             def float16_convertor(val):
                 return val.bfloat16()
         else:
