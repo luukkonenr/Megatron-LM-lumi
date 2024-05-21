@@ -550,7 +550,8 @@ def load_checkpoint(model, optimizer, opt_param_scheduler, load_arg='load', stri
         return 0
 
     # Set checkpoint version.
-    set_checkpoint_version(state_dict.get('checkpoint_version', 0))
+    print("WARNING: If checkpoint version is not set, it will be set to 3.0")
+    set_checkpoint_version(state_dict.get('checkpoint_version', 3))
 
     # Set iteration.
     if args.finetune or release:
