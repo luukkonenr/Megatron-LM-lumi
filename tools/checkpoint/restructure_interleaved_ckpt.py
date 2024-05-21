@@ -82,13 +82,14 @@ def unstructure_pipeline_parallel_model(model_list, virtual_pipeline_parallel_si
     
     # Add arguments 
     unstructured_model['args'] = model_list[0]['args']
+    unstructured_model['checkpoint_version'] = model_list[0]['checkpoint_version'] 
     
     return unstructured_model
 
-def restructure_keys(model, num_layers, pipeline_parallel_model_size):
+def restructure_keys(model, num_layers, new_pipeline_parallel_model_size):
     pipeline_shards = []
     final_norm_layer = None
-    for i in range(pipeline_parallel_model_size):
+    for i in range(new_pipeline_parallel_model_size):
         pipeline_shards.append({'model': {'language_model': {'encoder':{}}}})
     encoder = model['model']['language_model']['encoder']
     layer_num_regex = re.compile(r"\.(\d*)\.")
@@ -97,14 +98,15 @@ def restructure_keys(model, num_layers, pipeline_parallel_model_size):
             final_norm_layer = encoder[layer_name]
         else:
             layer_idx = int(layer_num_regex.search(layer_name).groups()[0])
-            new_idx_in_shard = calculate_new_pp_rank(layer_idx, num_layers, pipeline_parallel_model_size)
-            shard_idx = layer_idx // (num_layers // pipeline_parallel_model_size)
+            new_idx_in_shard = calculate_new_pp_rank(layer_idx, num_layers, new_pipeline_parallel_model_size)
+            shard_idx = layer_idx // (num_layers // new_pipeline_parallel_model_size)
             new_layer_name = layer_num_regex.sub(f".{str(new_idx_in_shard)}.", layer_name)
             pipeline_shards[shard_idx]['model']['language_model']['encoder'][new_layer_name] = encoder[layer_name]
             pipeline_shards[shard_idx]['args'] = model['args']
+            pipeline_shards[shard_idx]['checkpoint_version'] = model['checkpoint_version']
  
-    pipeline_shards[-1]['model']['language_model']['encoder'][f"final_norm.weight"] = final_norm_layer
     pipeline_shards[0]['model']['language_model']['embedding'] = model['model']['language_model']['embedding']
+    pipeline_shards[-1]['model']['language_model']['encoder'][f"final_norm.weight"] = final_norm_layer
     pipeline_shards[-1]['model']['language_model']['output_layer'] = model['model']['language_model']['output_layer']
 
     return pipeline_shards
@@ -117,16 +119,20 @@ def main():
     parser.add_argument('--tp_size', type=int, default=8, help='tensor model parallel size')
     parser.add_argument('--pp_size', type=int, default=8, help='pipeline model parallel size')
     parser.add_argument('--vpp_size', type=int, default=5, help='virtual pipeline model parallel size')
+    parser.add_argument('--new_pp_size', type=int, default=None, help='new pipeline model parallel size')
     parser.add_argument('--num_layers_per_vpp_stage', type=int, default=2, help='number of layers per virtual pipeline stage')
     parser.add_argument('--num_layers', type=int, default=80, help='number of layers in the model')
     parser.add_argument('--output_path', type=str, required=True, help='output path for the restructured model')
 
     args = parser.parse_args()
+    if args.new_pp_size is None:
+        args.new_pp_size = args.pp_size
+
     log(args)
     for tp in tqdm(range(args.tp_size)):
         models = get_tp_model_list(args.checkpoint_path, tp)
         combinded_model = unstructure_pipeline_parallel_model(models, args.vpp_size, args.pp_size, args.num_layers_per_vpp_stage)
-        restructured_pp_shards = restructure_keys(combinded_model, num_layers=args.num_layers, pipeline_parallel_model_size=args.pp_size)
+        restructured_pp_shards = restructure_keys(combinded_model, num_layers=args.num_layers, new_pipeline_parallel_model_size=args.new_pp_size)
         log("Saving:", end=' ')
 
         for i, shard in enumerate(restructured_pp_shards):

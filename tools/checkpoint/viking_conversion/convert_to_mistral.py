@@ -21,7 +21,7 @@ import os
 import re
 import datetime
 import torch
-from transformers import AutoTokenizer, LlamaConfig
+from transformers import AutoTokenizer, MistralConfig 
 import sys
 
 # change path to a relative path
@@ -364,11 +364,11 @@ def main():
         log(f"Loading model shards from {args.path_to_merged_checkpoint}")
         input_state_dict = torch.load(args.path_to_merged_checkpoint, map_location="cpu")
 
-    config = LlamaConfig.from_json_file(args.config_file)
-    config.architectures = ["LLaMAForCausalLM"]
+    config = MistralConfig.from_json_file(args.config_file)
+    config.architectures = ["MistralForCausalLM"]
 
     # Convert.
-    log("Converting to HF LLaMAForCausalLM")
+    log("Converting to HF MistralForCausalLM")
     output_state_dict = convert_megatron_checkpoint(args, input_state_dict, config)
     log("...done")
     # Print the structure of converted state dict.
