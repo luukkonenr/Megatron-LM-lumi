@@ -569,6 +569,7 @@ def _add_network_size_args(parser):
     group.add_argument('--position-embedding-type', type=str, default='learned_absolute',
                        choices=['learned_absolute', 'rope'],
                        help='Position embedding type.')
+    group.add_argument('--rope-theta', type=float, default=1e4, help='Theta value for rope.')
     group.add_argument('--use-rotary-position-embeddings', action='store_true',
                        help='Use rotary positional embeddings or not. '
                        'Deprecated: use --position-embedding-type')
@@ -1156,9 +1157,14 @@ def _add_data_args(parser):
                                 'GPT2BPETokenizer',
                                 'SentencePieceTokenizer',
                                 'GPTSentencePieceTokenizer',
+                                'NullTokenizer',
                                 'Llama2Tokenizer',
-                                'NullTokenizer'],
+                                'HFPretrainedTokenizer'],
                        help='What type of tokenizer to use.')
+    
+    group.add_argument('--hf_tokenizer_path', type=str, default=None,
+                       help='HuggingFace pretrained tokenizer model.')
+
     group.add_argument('--tokenizer-model', type=str, default=None,
                        help='Sentencepiece tokenizer model.')
     group.add_argument('--reset-position-ids', action='store_true',
