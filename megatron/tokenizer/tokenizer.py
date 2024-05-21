@@ -7,6 +7,7 @@ from abc import abstractmethod
 
 from .bert_tokenization import FullTokenizer as FullBertTokenizer
 from .gpt2_tokenization import GPT2Tokenizer
+from transformers import AutoTokenizer
 
 def build_tokenizer(args):
     """Initialize tokenizer."""
@@ -41,6 +42,8 @@ def build_tokenizer(args):
     elif args.tokenizer_type == 'NullTokenizer':
         assert args.vocab_size is not None
         tokenizer = _NullTokenizer(args.vocab_size)
+    elif args.tokenizer_type == "HFPretrainedTokenizer":
+        tokenizer = _HFTokenizer(args.hf_tokenizer_path)
     else:
         raise NotImplementedError('{} tokenizer is not '
                                   'implemented.'.format(args.tokenizer_type))
@@ -49,7 +52,8 @@ def build_tokenizer(args):
     if getattr(args, "padded_vocab_size", None) is None:
         args.padded_vocab_size = _vocab_size_with_padding(tokenizer.vocab_size,
                                                           args)
-
+    print("tokenizer type: ", args.tokenizer_type, flush=True)
+     
     return tokenizer
 
 
@@ -291,6 +295,26 @@ class _GPT2BPETokenizer(AbstractTokenizer):
     def eod(self):
         return self.eod_id
 
+class _HFTokenizer:
+    def __init__(self, tokenizer_name):
+        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
+        self.eod_id = self.tokenizer.eos_token_id
+        self.decoder = {value:key for key, value in self.tokenizer.get_vocab().items()}
+    
+    @property
+    def vocab_size(self):
+        return self.tokenizer.vocab_size
+    def tokenize(self, text):
+        return self.tokenizer.encode(text)
+    def detokenize(self, ids):
+        return self.tokenizer.decode(ids)
+    @property
+    def inv_vocab(self):
+        return self.tokenizer.decoder 
+    
+    @property
+    def eod(self):
+        return self.eod_id 
 
 class _SentencePieceTokenizer(AbstractTokenizer):
     """SentencePieceTokenizer-Megatron wrapper"""
