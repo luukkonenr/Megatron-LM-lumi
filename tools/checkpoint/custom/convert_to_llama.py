@@ -36,7 +36,7 @@ CUR_MODE = 'default'
 def log(s, mode='default'):
     if MODES[mode]<=MODES[CUR_MODE]:
         now = str(datetime.datetime.now())
-        print(f"{now.split('.')[:-1]}: {s}")
+        print(f"{now.split('.')[:-1]}: {s}", flush=True)
 
 def recursive_print(name, val, spaces=0):
     # Format the message.
@@ -217,17 +217,24 @@ def convert_megatron_checkpoint(args, input_state_dict, config):
         elif (
             op_name == "self_attention.query"
         ) and weight_or_bias == "weight":
+            print(">> weight shape: ", val.shape)
             out_val = fix_query_key_value_ordering(val, checkpoint_version, 1, heads, hidden_size_per_head)
+            print("Arguments for fix_query_key_value_ordering: ", 1, checkpoint_version, 1, heads, hidden_size_per_head)
             #out_val = out_val.transpose(0, 1).contiguous()
             out_val = out_val.contiguous()
             output_state_dict[layer_name + ".self_attn.q_proj.weight"] = out_val
         elif (
             op_name == "self_attention.key_value"
         )   and weight_or_bias == "weight":
-            #print(f">> key_value origin size: {val.size()}")
+            print(f">> key_value origin shape: {val.shape}")
             size_per_weight = val.size(0) // 2
             # kv_groups = config.num_attention_heads//config.num_key_value_heads
-            out_val = fix_query_key_value_ordering(val, checkpoint_version, 2, config.num_key_value_heads, hidden_size_per_head)
+            print("arguments for fix_query_key_value_ordering: ", size_per_weight, checkpoint_version, 2, config.num_key_value_heads, hidden_size_per_head)
+            if config.num_key_value_heads > 1:
+                out_val = fix_query_key_value_ordering(val, checkpoint_version, 2, config.num_key_value_heads, hidden_size_per_head)
+            else:
+                out_val = fix_query_key_value_ordering(val, checkpoint_version, 2, heads, hidden_size_per_head)
+                # out_val = fix_query_key_value_ordering(val, checkpoint_version, 2, config.num_key_value_heads, hidden_size_per_head)
             #print(f">> key_value output size: {out_val.size()}")
             out_val = out_val.contiguous()
             output_state_dict[layer_name + ".self_attn.k_proj.weight"] = out_val[:size_per_weight, :]
@@ -346,7 +353,7 @@ def main():
     validate_args(args)
 
     if args.path_to_unmerged_checkpoint:
-        from _merge_partitions import merge_model, save_model, parse_output_path
+        from merge_partitions import merge_model, save_model, parse_output_path
 
         if args.merged_save_path:
             merged_output_path = parse_output_path(args.path_to_unmerged_checkpoint, args.merged_save_path)
