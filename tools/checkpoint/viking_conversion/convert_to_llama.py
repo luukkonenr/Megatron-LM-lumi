@@ -346,7 +346,7 @@ def main():
     validate_args(args)
 
     if args.path_to_unmerged_checkpoint:
-        from merge_partitions import merge_model, save_model, parse_output_path
+        from _merge_partitions import merge_model, save_model, parse_output_path
 
         if args.merged_save_path:
             merged_output_path = parse_output_path(args.path_to_unmerged_checkpoint, args.merged_save_path)

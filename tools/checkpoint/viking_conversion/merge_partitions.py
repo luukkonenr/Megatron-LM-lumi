@@ -196,14 +196,20 @@ def merge_model(path_to_checkpoint, mode='default'):
                                 #         * self.hidden_size_per_attention_head
                                 #     ),
                                 # )
+                            print(vars(cp_args))
                             num_query_groups = vars(cp_args).get(group_query_key)
                             # num_query_groups_per_partition = num_query_groups // tp_size
                             shape = (-1,
                                 cp_args.num_attention_heads // vars(cp_args).get(group_query_key) + 2, 
                                 cp_args.hidden_size // cp_args.num_attention_heads, 
                                 cp_args.hidden_size)
-                                
+
+ 
+                            print("shape:", shape) 
                             layer = layer.view(*shape)
+                            # print number of elements
+                            print("Number of elements in layer:", layer.numel())
+
 
                             query_layer = layer[:,:-2].reshape(-1, cp_args.hidden_size)
                             key_value_layer = layer[:,-2:].reshape(-1,cp_args.hidden_size)
