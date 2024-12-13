@@ -2,7 +2,7 @@
 
 This is a detached fork of Megatron-LM, building upon https://github.com/NVIDIA/Megatron-LM/tree/4e79e712ea4a8c0e4328d888060c4adc172cbfa0. 
 
-
+Please follow https://github.com/LumiOpen/Megatron-LM-lumi/
 
 # Original Megatron-LM readme:
 
